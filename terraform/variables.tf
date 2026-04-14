@@ -17,9 +17,9 @@ variable "environment" {
 }
 
 variable "bedrock_model_id" {
-  description = "Bedrock model ID"
+  description = "Bedrock model ID (OpenAI GPT OSS 120B supports Converse tool use)"
   type        = string
-  default     = "amazon.nova-micro-v1:0"
+  default     = "openai.gpt-oss-120b-1:0"
 }
 
 variable "lambda_timeout" {
@@ -38,6 +38,47 @@ variable "api_throttle_rate_limit" {
   description = "API Gateway throttle rate limit"
   type        = number
   default     = 5
+}
+
+variable "pushover_app_token" {
+  description = "Pushover application API token"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "pushover_user_key" {
+  description = "Pushover user key for notifications"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_oauth_client_id" {
+  description = "Google OAuth 2.0 client ID"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_oauth_client_secret" {
+  description = "Google OAuth 2.0 client secret"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_oauth_refresh_token" {
+  description = "Google OAuth 2.0 refresh token (obtained via one-time consent flow)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_calendar_id" {
+  description = "Google Calendar ID to manage interview slots"
+  type        = string
+  default     = "primary"
 }
 
 variable "use_custom_domain" {

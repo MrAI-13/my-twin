@@ -133,10 +133,16 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      CORS_ORIGINS     = var.use_custom_domain ? "https://${var.root_domain},https://www.${var.root_domain}" : "https://${aws_cloudfront_distribution.main.domain_name}"
-      S3_BUCKET        = aws_s3_bucket.memory.id
-      USE_S3           = "true"
-      BEDROCK_MODEL_ID = var.bedrock_model_id
+      CORS_ORIGINS              = var.use_custom_domain ? "https://${var.root_domain},https://www.${var.root_domain}" : "https://${aws_cloudfront_distribution.main.domain_name}"
+      S3_BUCKET                 = aws_s3_bucket.memory.id
+      USE_S3                    = "true"
+      BEDROCK_MODEL_ID          = var.bedrock_model_id
+      PUSHOVER_APP_TOKEN        = var.pushover_app_token
+      PUSHOVER_USER_KEY         = var.pushover_user_key
+      GOOGLE_OAUTH_CLIENT_ID     = var.google_oauth_client_id
+      GOOGLE_OAUTH_CLIENT_SECRET = var.google_oauth_client_secret
+      GOOGLE_OAUTH_REFRESH_TOKEN = var.google_oauth_refresh_token
+      GOOGLE_CALENDAR_ID         = var.google_calendar_id
     }
   }
 
@@ -193,6 +199,18 @@ resource "aws_apigatewayv2_route" "post_chat" {
 resource "aws_apigatewayv2_route" "get_health" {
   api_id    = aws_apigatewayv2_api.main.id
   route_key = "GET /health"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "post_sessions_end" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /sessions/end"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "get_availability" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /availability"
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 

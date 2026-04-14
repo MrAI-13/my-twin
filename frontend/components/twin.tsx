@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, Bot, User, LogOut } from 'lucide-react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface Message {
     id: string;
@@ -15,8 +17,10 @@ export default function Twin() {
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [sessionId, setSessionId] = useState<string>('');
+    const [sessionEnded, setSessionEnded] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const sessionEndedRef = useRef(false);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -25,6 +29,27 @@ export default function Twin() {
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    const endSession = useCallback(() => {
+        if (!sessionId || sessionEndedRef.current || messages.length === 0) return;
+        sessionEndedRef.current = true;
+        setSessionEnded(true);
+
+        const body = JSON.stringify({ session_id: sessionId });
+        // fetch + keepalive: reliable cross-origin JSON POST when the page is unloading (sendBeacon is flaky here)
+        fetch(`${API_URL}/sessions/end`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+            keepalive: true,
+        }).catch(() => {});
+    }, [sessionId, messages.length]);
+
+    useEffect(() => {
+        const handleUnload = () => endSession();
+        window.addEventListener('pagehide', handleUnload);
+        return () => window.removeEventListener('pagehide', handleUnload);
+    }, [endSession]);
 
     const sendMessage = async () => {
         if (!input.trim() || isLoading) return;
@@ -41,7 +66,7 @@ export default function Twin() {
         setIsLoading(true);
 
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat`, {
+            const response = await fetch(`${API_URL}/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -106,11 +131,22 @@ export default function Twin() {
         <div className="flex flex-col h-full bg-gray-50 rounded-lg shadow-lg">
             {/* Header */}
             <div className="bg-gradient-to-r from-slate-700 to-slate-800 text-white p-4 rounded-t-lg">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                    <Bot className="w-6 h-6" />
-                    AI Digital Twin
-                </h2>
-                <p className="text-sm text-slate-300 mt-1">Your AI course companion</p>
+                <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-semibold flex items-center gap-2">
+                        <Bot className="w-6 h-6" />
+                        Howdy!
+                    </h2>
+                    {messages.length > 0 && !sessionEnded && (
+                        <button
+                            onClick={endSession}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-600 hover:bg-slate-500 rounded-md transition-colors"
+                        >
+                            <LogOut className="w-4 h-4" />
+                            End conversation
+                        </button>
+                    )}
+                </div>
+                <p className="text-sm text-slate-300 mt-1">I can answer questions, notify Michel with push notifications and even schedule interviews on Google Calendar!</p>
             </div>
 
             {/* Messages */}
@@ -126,8 +162,8 @@ export default function Twin() {
                         ) : (
                             <Bot className="w-12 h-12 mx-auto mb-3 text-gray-400" />
                         )}
-                        <p>Hello! I&apos;m your Digital Twin.</p>
-                        <p className="text-sm mt-2">Ask me anything about AI deployment!</p>
+                        <p>Hello! I&apos;m Michel Randy's Career AI Twin.</p>
+                        <p className="text-sm mt-2">Ask me any questions about my personal and professional life!</p>
                     </div>
                 )}
 
@@ -211,26 +247,32 @@ export default function Twin() {
 
             {/* Input */}
             <div className="border-t border-gray-200 p-4 bg-white rounded-b-lg">
-                <div className="flex gap-2">
-                    <input
-                        ref={inputRef}
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={handleKeyPress}
-                        placeholder="Type your message..."
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-600 focus:border-transparent text-gray-800"
-                        disabled={isLoading}
-                        autoFocus
-                    />
-                    <button
-                        onClick={sendMessage}
-                        disabled={!input.trim() || isLoading}
-                        className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                        <Send className="w-5 h-5" />
-                    </button>
-                </div>
+                {sessionEnded ? (
+                    <div className="text-center text-sm text-gray-500 py-2">
+                        Conversation ended — Michel has been notified. Thank you for visiting!
+                    </div>
+                ) : (
+                    <div className="flex gap-2">
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyDown={handleKeyPress}
+                            placeholder="Type your message..."
+                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-600 focus:border-transparent text-gray-800"
+                            disabled={isLoading}
+                            autoFocus
+                        />
+                        <button
+                            onClick={sendMessage}
+                            disabled={!input.trim() || isLoading}
+                            className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <Send className="w-5 h-5" />
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

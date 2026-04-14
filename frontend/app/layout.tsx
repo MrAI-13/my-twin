@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Michel Randy's AI Career Twin",
-  description: "AI representing Michel Randy on His Website",
+  title: "Michel's AI Career Twin",
+  description: "AI representing Michel Randy",
 };
 
 export default function RootLayout({

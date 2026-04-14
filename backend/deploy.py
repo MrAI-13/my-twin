@@ -42,7 +42,15 @@ def main():
 
     # Copy application files
     print("Copying application files...")
-    for file in ["server.py", "lambda_handler.py", "context.py", "resources.py"]:
+    for file in [
+        "server.py",
+        "lambda_handler.py",
+        "context.py",
+        "resources.py",
+        "pushover_client.py",
+        "calendar_client.py",
+        "bedrock_tools.py",
+    ]:
         if os.path.exists(file):
             shutil.copy2(file, "lambda-package/")
     
