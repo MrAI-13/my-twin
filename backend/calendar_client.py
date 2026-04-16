@@ -10,6 +10,15 @@ SLOT_END_HOUR = 15
 SLOT_DURATION_MINUTES = 30
 MEETING_BUFFER_MINUTES = 15
 LOOKAHEAD_DAYS = 14
+WEEKDAY_INDEX = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
 
 
 def _get_calendar_service():
@@ -33,8 +42,18 @@ def _get_calendar_service():
     return build("calendar", "v3", credentials=creds, cache_discovery=False)
 
 
-def get_available_slots(num_slots: int = 3) -> List[Dict[str, str]]:
-    """Return up to `num_slots` free 30-min slots in the 12-15 ET window over the next N weekdays."""
+def get_available_slots(
+    num_slots: int = 3,
+    target_date: Optional[str] = None,
+    target_weekday: Optional[str] = None,
+) -> List[Dict[str, str]]:
+    """
+    Return up to `num_slots` free 30-min slots in the 12-15 ET window.
+
+    - If target_date is provided (YYYY-MM-DD), only search that date.
+    - Else if target_weekday is provided (e.g. "tuesday"), only search matching weekdays.
+    - Else return next available slots across weekdays in the next LOOKAHEAD_DAYS.
+    """
     service = _get_calendar_service()
     if not service:
         return []
@@ -42,9 +61,25 @@ def get_available_slots(num_slots: int = 3) -> List[Dict[str, str]]:
     calendar_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
     now = datetime.now(ET)
     slots: List[Dict[str, str]] = []
+    target_date_value = None
+    if target_date:
+        try:
+            target_date_value = datetime.strptime(target_date, "%Y-%m-%d").date()
+        except ValueError:
+            return []
+
+    target_weekday_value = None
+    if target_weekday:
+        target_weekday_value = WEEKDAY_INDEX.get(target_weekday.strip().lower())
+        if target_weekday_value is None:
+            return []
 
     for day_offset in range(1, LOOKAHEAD_DAYS + 1):
         candidate_day = now + timedelta(days=day_offset)
+        if target_date_value and candidate_day.date() != target_date_value:
+            continue
+        if target_weekday_value is not None and candidate_day.weekday() != target_weekday_value:
+            continue
         if candidate_day.weekday() >= 5:
             continue
 
@@ -83,8 +118,8 @@ def get_available_slots(num_slots: int = 3) -> List[Dict[str, str]]:
 
             if is_free:
                 slots.append({
-                    "start": slot_start.isoformat(),
-                    "end": slot_end.isoformat(),
+                    "start_iso": slot_start.isoformat(),
+                    "end_iso": slot_end.isoformat(),
                     "display": slot_start.strftime("%A, %B %d at %I:%M %p ET"),
                 })
                 if len(slots) >= num_slots:

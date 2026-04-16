@@ -1,21 +1,21 @@
 {
-    "full_name": "Your Full Name",
-    "name": "Your Nickname",
-    "current_role": "Your Current Role",
-    "location": "Your Location",
-    "email": "your.email@example.com",
-    "linkedin": "linkedin.com/in/yourprofile",
+    "full_name": "Michel Randy Djouonang Bobda",
+    "name": "Michel",
+    "current_role": "Applied AI Engineer",
+    "location": "Baltimore, MD",
+    "email": "michelrandy13@gmail.com",
+    "linkedin": "https://www.linkedin.com/in/michel-r-djouonang-864ab0224/",
     "specialties": [
-      "Your specialty 1",
-      "Your specialty 2",
-      "Your specialty 3"
+      "AI Agents",
+      "Context Engineering",
+      "AWS"
     ],
-    "years_experience": 10,
+    "years_experience": 3,
     "education": [
       {
-        "degree": "Your Degree",
-        "institution": "Your University",
-        "year": "2020"
+        "degree": "MSc in Telecommunications Engineering",
+        "institution": "University of Maryland - College Park",
+        "year": "2021"
       }
     ]
   }

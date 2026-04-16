@@ -12,6 +12,12 @@ try:
 except FileNotFoundError:
     linkedin = "LinkedIn profile not available"
 
+try:
+    with open("./data/resume.md", "r", encoding="utf-8") as f:
+        resume = f.read()
+except FileNotFoundError:
+    resume = "Resume not found"
+
 # Read other data files
 with open("./data/summary.txt", "r", encoding="utf-8") as f:
     summary = f.read()

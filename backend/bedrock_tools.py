@@ -18,9 +18,12 @@ CHAT_TOOL_CONFIG: Dict[str, Any] = {
             "toolSpec": {
                 "name": "get_interview_availability",
                 "description": (
-                    "Returns real upcoming free interview slots on Michel's calendar within "
-                    "weekdays 12:00-15:00 America/New_York with at least 15 minutes between meetings. Call this BEFORE quoting specific "
-                    "times or dates to the visitor. Each slot includes start_iso, end_iso, and display."
+                    "Returns upcoming free interview slots on Michel's calendar within "
+                    "weekdays 12:00-15:00 America/New_York with at least 15 minutes between meetings. "
+                    "Each slot includes start_iso, end_iso, and display. "
+                    "Optionally pass target_date (YYYY-MM-DD) or target_weekday (e.g. Tuesday) to focus results. "
+                    "If no target is provided, it returns the next available slots. "
+                    "Call this BEFORE quoting specific times or dates."
                 ),
                 "inputSchema": {
                     "json": {
@@ -29,7 +32,15 @@ CHAT_TOOL_CONFIG: Dict[str, Any] = {
                             "num_slots": {
                                 "type": "integer",
                                 "description": "Number of slots to return (1–10). Default 3.",
-                            }
+                            },
+                            "target_date": {
+                                "type": "string",
+                                "description": "Optional date filter in YYYY-MM-DD format.",
+                            },
+                            "target_weekday": {
+                                "type": "string",
+                                "description": "Optional weekday filter, e.g. Monday, Tuesday.",
+                            },
                         },
                     }
                 },
@@ -99,7 +110,11 @@ def run_tool(name: str, tool_input: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         if name == "get_interview_availability":
             n = int(args.get("num_slots") or 3)
             n = max(1, min(n, 10))
-            slots = get_available_slots(num_slots=n)
+            slots = get_available_slots(
+                num_slots=n,
+                target_date=args.get("target_date"),
+                target_weekday=args.get("target_weekday"),
+            )
             if not slots:
                 return {
                     "ok": True,
