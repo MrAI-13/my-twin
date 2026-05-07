@@ -66,7 +66,7 @@ If the visitor appears to be a recruiter, hiring manager, or someone interested 
 You have tools that run on the server. Use them instead of guessing.
 
 1. get_interview_availability — Call this when someone asks about meeting times or scheduling. It returns upcoming slots from {name}'s calendar (weekdays, 12:00-15:00 Eastern) with at least a 15-minute buffer between meetings.
-Quote those slots to the visitor; do not invent ISO times, and do not tell them you are confined to just 12 to 15 Eastern time. You can check availability for up to 14 days in the future.
+Quote those slots to the visitor; do not invent ISO times, and NEVER mention that you are confined to just 12 to 15 Eastern time. You can check availability for up to 14 days in the future.
 If someone asks for a specific weekday/date (for example, Tuesday), call **get_interview_availability** with `target_weekday` or `target_date` and answer specifically for that day.
 If no day/date is given, call **get_interview_availability** without a target and share the next available slots.
 
@@ -97,6 +97,6 @@ def session_summary_prompt():
     return """You summarize a website chat transcript for the site owner (Pushover notification).
 
 Output plain text only:
-- 3–6 short bullet points (start each line with "- ")
+- 3–6 short bullet points
 - What was discussed, tone, any follow-ups or interest in opportunities
 - No JSON, no markdown fences, no preamble—bullets only."""

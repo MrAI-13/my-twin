@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
@@ -12,7 +13,7 @@ from botocore.exceptions import ClientError
 from context import prompt, session_summary_prompt
 from pushover_client import send_pushover
 from calendar_client import get_available_slots
-from bedrock_tools import converse_with_tools
+from bedrock_tools import converse_stream_with_tools
 
 # Load environment variables
 load_dotenv()
@@ -52,11 +53,6 @@ if USE_S3:
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
-
-
-class ChatResponse(BaseModel):
-    response: str
-    session_id: str
 
 
 class SessionEndRequest(BaseModel):
@@ -182,28 +178,9 @@ def summarize_conversation_for_push(conversation: List[Dict]) -> str:
         return transcript[:1200]
 
 
-def call_bedrock(conversation: List[Dict], user_message: str) -> str:
-    """Call Bedrock with tool-capable multi-turn loop (calendar, Pushover, etc.)."""
-    try:
-        return converse_with_tools(
-            bedrock_client,
-            BEDROCK_MODEL_ID,
-            prompt(),
-            conversation,
-            user_message,
-        )
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        error_message = e.response["Error"].get("Message", str(e))
-        if error_code == "ValidationException":
-            print(f"Bedrock validation error: {e}")
-            raise HTTPException(status_code=400, detail=error_message)
-        elif error_code == "AccessDeniedException":
-            print(f"Bedrock access denied: {e}")
-            raise HTTPException(status_code=403, detail=error_message)
-        else:
-            print(f"Bedrock error: {e}")
-            raise HTTPException(status_code=500, detail=error_message)
+def _sse_event(event: str, data: dict) -> str:
+    """Format a single SSE event."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
 @app.get("/")
@@ -225,40 +202,55 @@ async def health_check():
     }
 
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post("/chat")
 async def chat(request: ChatRequest):
-    try:
-        # Generate session ID if not provided
-        session_id = request.session_id or str(uuid.uuid4())
+    session_id = request.session_id or str(uuid.uuid4())
+    conversation = load_conversation(session_id)
+    user_message = request.message
 
-        # Load conversation history
-        conversation = load_conversation(session_id)
+    def event_generator():
+        yield _sse_event("session", {"session_id": session_id})
 
-        # Call Bedrock for response
-        assistant_response = call_bedrock(conversation, request.message)
+        full_text = ""
+        try:
+            for chunk in converse_stream_with_tools(
+                bedrock_client,
+                BEDROCK_MODEL_ID,
+                prompt(),
+                conversation,
+                user_message,
+            ):
+                full_text += chunk
+                yield _sse_event("delta", {"text": chunk})
+        except ClientError as e:
+            error_code = e.response["Error"]["Code"]
+            error_message = e.response["Error"].get("Message", str(e))
+            print(f"Bedrock error ({error_code}): {error_message}")
+            yield _sse_event("error", {"detail": error_message})
+            yield _sse_event("done", {})
+            return
+        except Exception as e:
+            print(f"Error in chat stream: {e}")
+            yield _sse_event("error", {"detail": str(e)})
+            yield _sse_event("done", {})
+            return
 
-        # Update conversation history
-        conversation.append(
-            {"role": "user", "content": request.message, "timestamp": datetime.now().isoformat()}
-        )
-        conversation.append(
-            {
-                "role": "assistant",
-                "content": assistant_response,
-                "timestamp": datetime.now().isoformat(),
-            }
-        )
-
-        # Save conversation
+        now = datetime.now().isoformat()
+        conversation.append({"role": "user", "content": user_message, "timestamp": now})
+        conversation.append({"role": "assistant", "content": full_text, "timestamp": now})
         save_conversation(session_id, conversation)
 
-        return ChatResponse(response=assistant_response, session_id=session_id)
+        yield _sse_event("done", {})
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error in chat endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.get("/conversation/{session_id}")

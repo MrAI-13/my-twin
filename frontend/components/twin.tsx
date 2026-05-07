@@ -62,16 +62,22 @@ export default function Twin() {
             timestamp: new Date(),
         };
 
-        setMessages(prev => [...prev, userMessage]);
+        const assistantId = (Date.now() + 1).toString();
+        const placeholderMessage: Message = {
+            id: assistantId,
+            role: 'assistant',
+            content: '',
+            timestamp: new Date(),
+        };
+
+        setMessages(prev => [...prev, userMessage, placeholderMessage]);
         setInput('');
         setIsLoading(true);
 
         try {
             const response = await fetch(`${API_URL}/chat`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     message: userMessage.content,
                     session_id: sessionId || undefined,
@@ -80,32 +86,79 @@ export default function Twin() {
 
             if (!response.ok) throw new Error('Failed to send message');
 
-            const data = await response.json();
+            const reader = response.body!.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let firstDelta = true;
 
-            if (!sessionId) {
-                setSessionId(data.session_id);
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                const events = buffer.split('\n\n');
+                buffer = events.pop() || '';
+
+                for (const raw of events) {
+                    if (!raw.trim()) continue;
+                    let eventName = 'message';
+                    let dataStr = '';
+                    for (const line of raw.split('\n')) {
+                        if (line.startsWith('event: ')) eventName = line.slice(7).trim();
+                        else if (line.startsWith('data: ')) dataStr = line.slice(6);
+                    }
+                    if (!dataStr) continue;
+                    const data = JSON.parse(dataStr);
+
+                    if (eventName === 'session' && data.session_id && !sessionId) {
+                        setSessionId(data.session_id);
+                    } else if (eventName === 'delta') {
+                        if (firstDelta) {
+                            firstDelta = false;
+                            setIsLoading(false);
+                        }
+                        const chunk = data.text as string;
+                        setMessages(prev =>
+                            prev.map(m =>
+                                m.id === assistantId
+                                    ? { ...m, content: m.content + chunk }
+                                    : m
+                            )
+                        );
+                    } else if (eventName === 'error') {
+                        setMessages(prev =>
+                            prev.map(m =>
+                                m.id === assistantId
+                                    ? { ...m, content: 'Sorry, I encountered an error. Please try again.' }
+                                    : m
+                            )
+                        );
+                    }
+                }
             }
-
-            const assistantMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: data.response,
-                timestamp: new Date(),
-            };
-
-            setMessages(prev => [...prev, assistantMessage]);
         } catch (error) {
             console.error('Error:', error);
-            const errorMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: 'Sorry, I encountered an error. Please try again.',
-                timestamp: new Date(),
-            };
-            setMessages(prev => [...prev, errorMessage]);
+            setMessages(prev => {
+                const hasPlaceholder = prev.some(m => m.id === assistantId);
+                if (hasPlaceholder) {
+                    return prev.map(m =>
+                        m.id === assistantId
+                            ? { ...m, content: 'Sorry, I encountered an error. Please try again.' }
+                            : m
+                    );
+                }
+                return [
+                    ...prev,
+                    {
+                        id: assistantId,
+                        role: 'assistant' as const,
+                        content: 'Sorry, I encountered an error. Please try again.',
+                        timestamp: new Date(),
+                    },
+                ];
+            });
         } finally {
             setIsLoading(false);
-            // Refocus the input after message is sent
             setTimeout(() => {
                 inputRef.current?.focus();
             }, 100);
@@ -168,7 +221,7 @@ export default function Twin() {
                     </div>
                 )}
 
-                {messages.map((message) => (
+                {messages.filter(m => m.role !== 'assistant' || m.content).map((message) => (
                     <div
                         key={message.id}
                         className={`flex gap-3 ${

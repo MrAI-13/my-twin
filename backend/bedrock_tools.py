@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import json as _json
+from typing import Any, Dict, Generator, List, Optional
 
 from botocore.exceptions import ClientError
 
@@ -278,3 +279,147 @@ def _converse_plain(bedrock_client, model_id, system_text, messages, inference):
     )
     content = response.get("output", {}).get("message", {}).get("content") or []
     return _assistant_text_from_blocks(content) or "(no response)"
+
+
+# ---------------------------------------------------------------------------
+# Streaming variants
+# ---------------------------------------------------------------------------
+
+def _rebuild_content_from_blocks(blocks: Dict[int, Dict]) -> List[Dict]:
+    """Turn the accumulated block map back into a Converse-style content list."""
+    content: List[Dict] = []
+    for idx in sorted(blocks):
+        blk = blocks[idx]
+        if blk["type"] == "text":
+            if not blk["text"]:
+                continue
+            content.append({"text": blk["text"]})
+        elif blk["type"] == "toolUse":
+            input_obj = {}
+            raw = blk.get("input_json", "")
+            if raw:
+                try:
+                    input_obj = _json.loads(raw)
+                except _json.JSONDecodeError:
+                    input_obj = {}
+            content.append({
+                "toolUse": {
+                    "toolUseId": blk["toolUse"]["toolUseId"],
+                    "name": blk["toolUse"]["name"],
+                    "input": input_obj,
+                }
+            })
+    return content
+
+
+def _converse_stream_plain(
+    bedrock_client, model_id, system_text, messages, inference,
+) -> Generator[str, None, None]:
+    """Streaming fallback without tools."""
+    resp = bedrock_client.converse_stream(
+        modelId=model_id,
+        system=[{"text": system_text}],
+        messages=messages,
+        inferenceConfig=inference,
+    )
+    got_text = False
+    for event in resp["stream"]:
+        if "contentBlockDelta" in event:
+            delta = event["contentBlockDelta"]["delta"]
+            if "text" in delta:
+                got_text = True
+                yield delta["text"]
+    if not got_text:
+        yield "(no response)"
+
+
+def converse_stream_with_tools(
+    bedrock_client,
+    model_id: str,
+    system_text: str,
+    prior_turns: List[Dict],
+    user_message: str,
+) -> Generator[str, None, None]:
+    """
+    Multi-turn Converse loop with client-side tool execution.
+
+    Uses non-streaming ``converse`` for all rounds because some models
+    (e.g. openai.gpt-oss-120b-1) produce garbled tool-input JSON via
+    ``converse_stream``.  The final text is yielded in small chunks so
+    the SSE transport can deliver it progressively to the browser.
+    """
+    messages: List[Dict] = []
+    for msg in prior_turns[-50:]:
+        messages.append(
+            {"role": msg["role"], "content": [{"text": msg["content"]}]}
+        )
+    messages.append({"role": "user", "content": [{"text": user_message}]})
+
+    inference = {
+        "maxTokens": 4096,
+        "temperature": 0.7,
+        "topP": 0.9,
+    }
+
+    converse_kwargs = dict(
+        modelId=model_id,
+        system=[{"text": system_text}],
+        toolConfig=CHAT_TOOL_CONFIG,
+        inferenceConfig=inference,
+    )
+
+    for _round in range(MAX_TOOL_ROUNDS):
+        # --- non-streaming round (reliable tool input) ---
+        try:
+            response = bedrock_client.converse(messages=messages, **converse_kwargs)
+        except ClientError as e:
+            err = e.response.get("Error", {})
+            code = err.get("Code", "")
+            msg_text = err.get("Message", "")
+            if code == "ValidationException" and (
+                "tool" in msg_text.lower() or "toolconfig" in msg_text.lower()
+            ):
+                print("Tool use not supported; falling back to plain stream:", msg_text)
+                yield from _converse_stream_plain(
+                    bedrock_client, model_id, system_text, messages, inference
+                )
+                return
+            raise
+
+        stop = response.get("stopReason")
+        out_msg = response.get("output", {}).get("message") or {}
+        content = out_msg.get("content") or []
+        messages.append(out_msg)
+
+        if stop == "tool_use":
+            tool_uses = _collect_tool_uses(content)
+            if not tool_uses:
+                txt = _assistant_text_from_blocks(content)
+                if txt:
+                    yield txt
+                else:
+                    yield "I wasn't able to complete that action. Please try again or rephrase."
+                return
+
+            result_blocks: List[Dict] = []
+            for tu in tool_uses:
+                result = run_tool(tu["name"], tu.get("input"))
+                result_blocks.append({
+                    "toolResult": {
+                        "toolUseId": tu["toolUseId"],
+                        "content": [{"json": result}],
+                    }
+                })
+            messages.append({"role": "user", "content": result_blocks})
+            continue
+
+        # --- final text response: yield in small chunks for streaming feel ---
+        text = _assistant_text_from_blocks(content)
+        if text:
+            for i in range(0, len(text), 8):
+                yield text[i : i + 8]
+        else:
+            yield "I'm not sure how to respond to that—could you try asking in another way?"
+        return
+
+    yield "I hit the limit for tool steps in one turn. Please send another message to continue."
