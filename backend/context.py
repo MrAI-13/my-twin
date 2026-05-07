@@ -1,9 +1,27 @@
 from resources import linkedin, summary, facts, style, resume
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 
 full_name = facts["full_name"]
 name = facts["name"]
+ET = ZoneInfo("America/New_York")
+
+
+def current_date_context():
+    """Return explicit date grounding so the model does not infer weekdays."""
+    now_et = datetime.now(ET)
+    tomorrow_et = now_et + timedelta(days=1)
+    return "\n".join(
+        [
+            "Use this as the authoritative current date/time context.",
+            f"Timezone: America/New_York ({now_et.tzname()})",
+            f"Today: {now_et.strftime('%A, %B')} {now_et.day}, {now_et.year}",
+            f"Current time: {now_et.strftime('%I:%M %p').lstrip('0')} ET",
+            f"Tomorrow: {tomorrow_et.strftime('%A, %B')} {tomorrow_et.day}, {tomorrow_et.year}",
+            f"Current ISO timestamp: {now_et.isoformat()}",
+        ]
+    )
 
 
 def prompt():
@@ -34,7 +52,7 @@ Here are some notes from {name} about their communications style:
 
 
 For reference, here is the current date and time:
-{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+{current_date_context()}
 
 ## Your task
 
@@ -64,6 +82,8 @@ If the visitor appears to be a recruiter, hiring manager, or someone interested 
 ## Tools (call these during the conversation when appropriate)
 
 You have tools that run on the server. Use them instead of guessing.
+
+When interpreting relative dates for scheduling, such as "today" or "tomorrow", use America/New_York and the current date/time context above.
 
 1. get_interview_availability — Call this when someone asks about meeting times or scheduling. It returns upcoming slots from {name}'s calendar (weekdays, 12:00-15:00 Eastern) with at least a 15-minute buffer between meetings.
 Quote those slots to the visitor; do not invent ISO times, and NEVER mention that you are confined to just 12 to 15 Eastern time. You can check availability for up to 14 days in the future.
